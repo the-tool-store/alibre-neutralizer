@@ -1,0 +1,10 @@
+﻿<AlibreDesignAddOn specificationVersion="2" friendlyName="alibre-neutralizer">
+<Author name="k4kfh" link="https://github.com/k4kfh/alibre-neutralizer"/>
+   <Copyright>Copyright (c) 2025 k4kfh</Copyright>
+   <DLL type="Managed" loadedWhen="Startup" location="alibre-neutralizer-addon.dll"/>
+   <Icon location=""/>
+   <Menu text="Alibre Neutralizer"/>
+   <Description>Parametric Bulk-Exporter for Alibre Design</Description>
+   <Workspace type="Always"/>
+   <Property name="Identifier" value="alibre-neutralizer-addon"/>
+</AlibreDesignAddOn>

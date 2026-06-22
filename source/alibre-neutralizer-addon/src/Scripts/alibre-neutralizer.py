@@ -12,6 +12,44 @@ import os
 import re
 import xml.etree.ElementTree as ET
 import csv
+import clr
+clr.AddReference('System.Windows.Forms')
+clr.AddReference('System.Drawing')
+from System.Windows.Forms import Form, TextBox, DockStyle, ScrollBars, Application
+from System.Drawing import Font, FontFamily, Size
+
+class OutputConsole:
+    """A simple non-modal WinForms window that displays log output."""
+    _instance = None
+
+    @staticmethod
+    def get():
+        if OutputConsole._instance is None or OutputConsole._instance._form.IsDisposed:
+            OutputConsole._instance = OutputConsole()
+        return OutputConsole._instance
+
+    def __init__(self):
+        self._form = Form()
+        self._form.Text = "Alibre Neutralizer"
+        self._form.Size = Size(700, 500)
+        self._form.TopMost = True
+        self._textbox = TextBox()
+        self._textbox.Multiline = True
+        self._textbox.ReadOnly = True
+        self._textbox.Dock = DockStyle.Fill
+        self._textbox.ScrollBars = ScrollBars.Both
+        self._textbox.WordWrap = False
+        self._textbox.Font = Font(FontFamily.GenericMonospace, 9.0)
+        self._form.Controls.Add(self._textbox)
+        self._form.Show()
+
+    def log(self, message):
+        self._textbox.AppendText(str(message) + "\r\n")
+        Application.DoEvents()
+
+    def close(self):
+        if not self._form.IsDisposed:
+            self._form.Close()
 
 class ExportTypes:
     """AlibreScript's IronPython interpreter doesn't have the Enum library available, so this was my best shot at fudging enum-ish behavior."""
@@ -278,6 +316,10 @@ class AlibreNeutralizer:
         else:
             raise Exception("Cannot initialize AssemblyNeutralizer without a valid Alibre Assembly object.")
 
+        # Collect any export failures so they can be surfaced in the final summary
+        # instead of being silently swallowed (which would make an incomplete export look successful).
+        self.export_failures = []
+
         # Read the configuration file
         tree = ET.parse(config_file_path)
         root = tree.getroot()
@@ -347,9 +389,10 @@ class AlibreNeutralizer:
         #     newly_exported_names = _export_subassembly_recursive(component, edir)
         #     exported_files.append(newly_exported_names)
         for subassy in self.root_component.SubAssemblies:
-            processed_files = processed_files.union(
-                self._export_subassemblies_recursive(subassy, self.export_directives, processed_files)
-            )
+            if subassy.FileName not in processed_files:
+                processed_files = processed_files.union(
+                    self._export_subassemblies_recursive(subassy, self.export_directives, processed_files)
+                )
 
     def _export_parts(self, assembly, export_directives, already_processed_files):
         """Given an Assembly (or AssembledSubAssembly), an ExportDirective, and a list of already-exported files to ignore,
@@ -374,11 +417,11 @@ class AlibreNeutralizer:
         for export_directive in self.export_directives:
             if (export_directive.export_root_assembly == True):
                 # We need to export this root Assembly
-                print "- Exporting Root Assembly to {0}: {1}".format(ExportTypes.convert_to_string(export_directive.export_type), self.root_component.Name)
+                OutputConsole.get().log("- Exporting Root Assembly to {0}: {1}".format(ExportTypes.convert_to_string(export_directive.export_type), self.root_component.Name))
                 abs_export_path = self._get_absolute_export_path(
                     export_directive.get_export_path(self.root_component)
                 )
-                print "- Path : {0}".format(abs_export_path)
+                OutputConsole.get().log("- Path : {0}".format(abs_export_path))
                 self._export(
                     self.root_component,
                     export_directive.export_type,
@@ -396,9 +439,10 @@ class AlibreNeutralizer:
         )
 
         # Step 2 : Export this subassembly
-        for edir in export_directives:
-            self._execute_single_export_directive(subassembly, edir)
-        already_processed_files = already_processed_files.union({subassembly.FileName})
+        if subassembly.FileName not in already_processed_files:
+            for edir in export_directives:
+                self._execute_single_export_directive(subassembly, edir)
+            already_processed_files = already_processed_files.union({subassembly.FileName})
 
         # Step 3: Recurse
         for subsubassy in subassembly.SubAssemblies:
@@ -434,7 +478,7 @@ class AlibreNeutralizer:
                             # TODO: uncomment to do it for realsies
                             os.remove(file_path)
                         except OSError as e:
-                            print "ERROR: Could not delete {file_path} in pre-export purge: {e}".format(file_path=file_path, e=e)
+                            OutputConsole.get().log("ERROR: Could not delete {file_path} in pre-export purge: {e}".format(file_path=file_path, e=e))
 
     def _execute_single_export_directive(self, component, export_directive):
         """Given a ``Part`` or ``Assembly``, execute one ``ExportDirective`` against it. This function does NOT perform any deduplication checking."""
@@ -453,11 +497,11 @@ class AlibreNeutralizer:
             # This will dictate whether we actually need to export this component.
             if export_directive.export_parts == True and (isinstance(component, AssembledPart) or isinstance(component, Part)):
                 # We need to export this Part
-                print "- Exporting Part to {0}: {1}".format(ExportTypes.convert_to_string(export_directive.export_type), component.Name)
+                OutputConsole.get().log("- Exporting Part to {0}: {1}".format(ExportTypes.convert_to_string(export_directive.export_type), component.Name))
                 abs_export_path = self._get_absolute_export_path(
                     export_directive.get_export_path(component)
                 )
-                print "- Path : {0}".format(abs_export_path)
+                OutputConsole.get().log("- Path : {0}".format(abs_export_path))
                 self._export(
                     component,
                     export_directive.export_type,
@@ -465,11 +509,11 @@ class AlibreNeutralizer:
                 )
             elif (export_directive.export_subassemblies == True) and isinstance(component, AssembledSubAssembly):
                 # We need to export this Subassembly
-                print "- Exporting Subassembly to {0}: {1}".format(ExportTypes.convert_to_string(export_directive.export_type), component.Name)
+                OutputConsole.get().log("- Exporting Subassembly to {0}: {1}".format(ExportTypes.convert_to_string(export_directive.export_type), component.Name))
                 abs_export_path = self._get_absolute_export_path(
                     export_directive.get_export_path(component)
                 )
-                print "- Path : {0}".format(abs_export_path)
+                OutputConsole.get().log("- Path : {0}".format(abs_export_path))
                 self._export(
                     component,
                     export_directive.export_type,
@@ -509,7 +553,9 @@ class AlibreNeutralizer:
                 # Export Parameters (dimensions, equations, etc) to CSV
                 self._export_parameters_to_csv(component, export_path_abs)
         except Exception as e:
-            print "ERROR: There was a problem exporting {0} to {1} format.".format(component.FileName, ExportTypes.convert_to_string(export_type))
+            failure_message = "ERROR: There was a problem exporting {0} to {1} format: {2}".format(component.FileName, ExportTypes.convert_to_string(export_type), e)
+            OutputConsole.get().log(failure_message)
+            self.export_failures.append(failure_message)
     
     def _convert_base_path_to_absolute(self):
         """Convert self.base_path to an absolute path, relative to the directory where the config file lives.
@@ -630,6 +676,7 @@ def main():
     if cfg_file_path == "" or cfg_file_path == None:
         # The user cancelled. Show an error to ensure they know what they just did.
         Windows().ErrorDialog("No config file was selected! Alibre Neutralizer will close now, and nothing will be exported.", window_name)
+        return
 
     # Create an instance using configuration from XML file
     neutralizer = AlibreNeutralizer(CurrentAssembly(), cfg_file_path)
@@ -651,7 +698,16 @@ def main():
     # If the user said yes, go
     if continue_choice == True:
         neutralizer.export_all()
-        Windows().InfoDialog("The export process completed!", window_name)
+        if len(neutralizer.export_failures) > 0:
+            Windows().ErrorDialog(
+                "The export process completed, but {0} export(s) FAILED:\n\n{1}".format(
+                    len(neutralizer.export_failures),
+                    "\n".join(neutralizer.export_failures)
+                ),
+                window_name
+            )
+        else:
+            Windows().InfoDialog("The export process completed!", window_name)
     else:
         Windows().InfoDialog("The export operation was cancelled. No files were modified. Alibre Neutralizer will now close.", window_name)
 

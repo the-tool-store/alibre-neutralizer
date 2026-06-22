@@ -6,5 +6,5 @@
    <Menu text="Alibre Neutralizer"/>
    <Description>Parametric Bulk-Exporter for Alibre Design</Description>
    <Workspace type="Always"/>
-   <Property name="Identifier" value="alibre-neutralizer-addon"/>
+   <Property name="Identifier" value="{0B876D17-30F9-40D9-BD1E-A0E26578A5C2}"/>
 </AlibreDesignAddOn>
